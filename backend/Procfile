@@ -1,1 +1,1 @@
-web: gunicorn smartcampus.wsgi:application
+web: gunicorn smartcampus.wsgi:application --log-file -

@@ -1,4 +1,6 @@
 from django.urls import path, include
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
 from rest_framework.routers import DefaultRouter
 from .views import (
     RegisterView,
@@ -21,6 +23,13 @@ from .views import (
     AuditLogViewSet,
 )
 
+
+@require_GET
+def health(request):
+    """Health check endpoint for Render. Returns 200 so the service passes its health check."""
+    return JsonResponse({'status': 'ok', 'service': 'smartcampus-api'})
+
+
 router = DefaultRouter()
 router.register(r'leaves', LeaveRequestViewSet, basename='leave')
 router.register(r'queue', QueueBookingViewSet, basename='queue')
@@ -34,6 +43,7 @@ router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 router.register(r'admin/audit-logs', AuditLogViewSet, basename='admin-audit-logs')
 
 urlpatterns = [
+    path('', health),  # GET /api/ → {"status": "ok"} — Render health check
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/login/', LoginView.as_view(), name='login'),
     path('auth/profile/', ProfileView.as_view(), name='profile'),

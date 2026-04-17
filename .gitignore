@@ -1,20 +1,28 @@
 # Python
 __pycache__/
 *.py[cod]
-*.sqlite3
+*.egg-info/
 venv/
 env/
-.env
+.venv/
+
+# Django
+*.sqlite3
+*.sqlite3-journal
+backend/staticfiles/
+backend/media/
+backend/.env
 
 # Node
 node_modules/
-dist/
+frontend/dist/
+frontend/.env
+frontend/.env.local
 
 # IDE
 .vscode/
 .idea/
 .DS_Store
 
-# Django
-staticfiles/
-media/
+# Logs
+*.log
