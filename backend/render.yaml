@@ -11,7 +11,7 @@ services:
     plan: free
     rootDir: backend
     buildCommand: ./build.sh
-    startCommand: gunicorn smartcampus.wsgi:application --log-file -
+    startCommand: ./start.sh
     healthCheckPath: /api/
     envVars:
       - key: PYTHON_VERSION
