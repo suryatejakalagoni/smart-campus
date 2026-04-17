@@ -4,15 +4,17 @@ import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, CalendarDays, FileText, Users, Search,
-  BarChart3, Bell, UserCircle, LogOut, Menu, X,
-  ChevronRight, Home, Clock, MapPin, BookOpen, Shield,
-  GraduationCap, ChevronLeft, Ticket, AlignJustify,
+  BarChart3, Bell, UserCircle, LogOut,
+  ChevronRight, Home, BookOpen,
+  ChevronLeft, Ticket, AlignJustify,
 } from 'lucide-react';
 import api from '../utils/api';
 
 // ── Command Palette pages ────────────────────────────
 const PAGES = [
-  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['student', 'faculty', 'admin'] },
+  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['student'] },
+  { label: 'Dashboard', path: '/faculty/dashboard', icon: LayoutDashboard, roles: ['faculty'] },
+  { label: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard, roles: ['admin'] },
   { label: 'Timetable', path: '/schedule', icon: CalendarDays, roles: ['student', 'faculty', 'admin'] },
   { label: 'Leave Management', path: '/leaves', icon: FileText, roles: ['student', 'admin'] },
   { label: 'Queue Booking', path: '/queue', icon: Ticket, roles: ['student', 'admin'] },
@@ -32,8 +34,8 @@ const NAV_GROUPS = [
     items: [
       { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['student'] },
       { label: 'Dashboard', path: '/admin/dashboard', icon: BarChart3, roles: ['admin'] },
-      { label: 'Dashboard', path: '/schedule', icon: LayoutDashboard, roles: ['faculty'] },
-      { label: 'Timetable', path: '/schedule', icon: CalendarDays, roles: ['student', 'admin'] },
+      { label: 'Dashboard', path: '/faculty/dashboard', icon: LayoutDashboard, roles: ['faculty'] },
+      { label: 'Timetable', path: '/schedule', icon: CalendarDays, roles: ['student', 'admin', 'faculty'] },
     ],
   },
   {
@@ -44,6 +46,7 @@ const NAV_GROUPS = [
       { label: 'Lost & Found', path: '/lost-found', icon: Search, roles: ['student', 'admin'] },
       { label: 'Attendance', path: '/faculty/attendance', icon: BarChart3, roles: ['faculty'] },
       { label: 'Reschedule', path: '/faculty/reschedule', icon: CalendarDays, roles: ['faculty'] },
+      { label: 'Academic Calendar', path: '/academic-calendar', icon: BookOpen, roles: ['faculty', 'student', 'admin'] },
     ],
   },
   {
@@ -320,14 +323,25 @@ const CommandPalette = ({ open, onClose, user, navigate }) => {
 };
 
 // ── Sidebar Link ──────────────────────────────────
-const SidebarLink = ({ to, icon: Icon, label, collapsed }) => (
+const SidebarLink = ({ to, icon: Icon, label, collapsed, badge }) => (
   <NavLink
     to={to}
     className={({ isActive }) => `oc-sidebar-link${isActive ? ' active' : ''}`}
     title={collapsed ? label : undefined}
   >
     <Icon size={18} style={{ flexShrink: 0 }} />
-    {!collapsed && <span>{label}</span>}
+    {!collapsed && <span style={{ flex: 1 }}>{label}</span>}
+    {!collapsed && badge > 0 && (
+      <span className="oc-nav-badge">{badge > 99 ? '99+' : badge}</span>
+    )}
+    {collapsed && badge > 0 && (
+      <span style={{
+        position: 'absolute', top: 4, right: 4,
+        width: 8, height: 8, borderRadius: '50%',
+        background: 'var(--danger)',
+        boxShadow: '0 0 6px rgba(239,68,68,0.6)',
+      }} />
+    )}
     {collapsed && <span className="oc-sidebar-tooltip">{label}</span>}
   </NavLink>
 );
@@ -340,6 +354,21 @@ const MainLayout = () => {
   const [collapsed, setCollapsed]     = useState(false);
   const [mobileOpen, setMobileOpen]   = useState(false);
   const [cmdOpen, setCmdOpen]         = useState(false);
+  const [pendingLeaves, setPendingLeaves] = useState(0);
+
+  // Fetch pending leave count for admin badge
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    const load = async () => {
+      try {
+        const res = await api.get('leaves/');
+        setPendingLeaves(res.data.filter((l) => l.status === 'pending').length);
+      } catch {}
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [user]);
 
   // Keyboard shortcut: Ctrl+K / Cmd+K
   useEffect(() => {
@@ -459,7 +488,13 @@ const MainLayout = () => {
                   key={item.path + item.label}
                   variants={{ hidden: { opacity: 0, x: -8 }, show: { opacity: 1, x: 0 } }}
                 >
-                  <SidebarLink to={item.path} icon={item.icon} label={item.label} collapsed={col} />
+                  <SidebarLink
+                    to={item.path}
+                    icon={item.icon}
+                    label={item.label}
+                    collapsed={col}
+                    badge={item.path === '/admin/leaves' ? pendingLeaves : 0}
+                  />
                 </motion.div>
               ))}
             </motion.div>
@@ -572,7 +607,6 @@ const MainLayout = () => {
       {/* ── Main Content ── */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        marginLeft: 0, transition: 'margin-left 0.3s ease',
       }} className="main-content-area">
         {/* Header */}
         <header className="oc-header">

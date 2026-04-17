@@ -27,28 +27,13 @@ const FacultyAttendance = () => {
     if (!selectedClass) return;
     setLoading(true);
     try {
-      // Find the section of the selected class
       const cls = classes.find(c => c.id === parseInt(selectedClass));
-      // Fetch students for that section/dept
-      // (Backend needs an endpoint to list students by section)
-      // For now, I'll fetch profiles and filter. 
-      // In production, we'd have /api/users/?role=student&section=...
-      const res = await api.get('auth/profile/'); // Placeholder for fetching student list
-      // Mocking student list for implementation demo if profile returns just current user
-      // Normally: const res = await api.get(`users/?role=student&section=${cls.section}`);
-      
-      // Since I can't fetch all users easily without a dedicated endpoint, 
-      // I'll assume we implementation a dedicated endpoint or filter based on roll_number/section
-      // I'll implement a mock-like structure for the UI demo.
-      setStudents([
-        { id: 1, username: 'student1', roll_number: 'CS2201', section: 'CSE-A' },
-        { id: 2, username: 'student2', roll_number: 'CS2202', section: 'CSE-A' },
-        { id: 3, username: 'student3', roll_number: 'CS2203', section: 'CSE-A' },
-      ]);
-      
-      // Initialize attendance records to 'present'
+      const res = await api.get(`users/?role=student&section=${cls?.section || ''}`);
+      const studentList = res.data;
+      setStudents(studentList);
+
       const initial = {};
-      [1, 2, 3].forEach(id => initial[id] = 'present');
+      studentList.forEach(s => initial[s.id] = 'present');
       setAttendanceData(initial);
     } catch (err) {
       toast.error('Failed to fetch students');

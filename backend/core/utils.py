@@ -39,7 +39,8 @@ def get_word_overlap(text1, text2):
 
 def find_matches(new_item):
     """
-    Calculates match scores for a new LostFoundItem and creates notifications.
+    Calculates match scores for a new LostFoundItem.
+    If a strong match is found, marks both items as 'matched' and creates notifications.
     """
     opposite_type = 'found' if new_item.item_type == 'lost' else 'lost'
     potential_matches = LostFoundItem.objects.filter(
@@ -47,29 +48,45 @@ def find_matches(new_item):
         status='open'
     )
 
+    best_match = None
+    best_score = 0
+
     for match in potential_matches:
         score = 0
-        
+
         # Category match
         if new_item.category == match.category:
             score += 30
-            
+
         # Title overlap
         title_overlap = get_word_overlap(new_item.title, match.title)
         score += 40 * title_overlap
-        
+
         # Description overlap
         desc_overlap = get_word_overlap(new_item.description, match.description)
         score += 20 * desc_overlap
-        
+
         # Location match
         if new_item.location_found_or_lost.lower() == match.location_found_or_lost.lower():
             score += 10
-            
-        if score >= 40:
-            # Create notifications for both users
-            notify_match(new_item, match)
-            notify_match(match, new_item)
+
+        if score >= 40 and score > best_score:
+            best_score = score
+            best_match = match
+
+    if best_match:
+        # Update both items to matched status
+        new_item.status = 'matched'
+        new_item.matched_with = best_match
+        new_item.save()
+
+        best_match.status = 'matched'
+        best_match.matched_with = new_item
+        best_match.save()
+
+        # Create notifications for both users
+        notify_match(new_item, best_match)
+        notify_match(best_match, new_item)
 
 def notify_match(target_item, matching_item):
     message = f"Potential match found! A {matching_item.item_type} item '{matching_item.title}' might match your {target_item.item_type} item '{target_item.title}'. Check it out!"

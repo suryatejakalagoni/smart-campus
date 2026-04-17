@@ -1,11 +1,12 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser, LeaveRequest, QueueBooking, ClassSchedule, RescheduleRequest, LostFoundItem, Notification, Attendance, StudentMark
+from django.contrib.auth.password_validation import validate_password
+from .models import CustomUser, LeaveRequest, QueueBooking, ClassSchedule, RescheduleRequest, LostFoundItem, Notification, Attendance, StudentMark, AuditLog
 
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'email', 'role', 'roll_number', 'department', 'phone')
+        fields = ('id', 'username', 'email', 'role', 'roll_number', 'department', 'phone', 'avatar', 'section')
         read_only_fields = ('id',)
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -37,10 +38,40 @@ class UserLoginSerializer(serializers.Serializer):
         raise serializers.ValidationError("Incorrect Credentials")
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    avatar = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'email', 'role', 'roll_number', 'department', 'phone', 'first_name', 'last_name')
-        read_only_fields = ('id', 'role', 'username')
+        fields = (
+            'id', 'username', 'email', 'role',
+            'first_name', 'last_name',
+            'roll_number', 'department', 'phone', 'section',
+            'avatar', 'bio', 'date_of_birth', 'address',
+            'date_joined', 'last_login', 'updated_at',
+        )
+        read_only_fields = ('id', 'role', 'username', 'date_joined', 'last_login', 'updated_at')
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True, required=True)
+    new_password = serializers.CharField(write_only=True, required=True, min_length=8)
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({'confirm_password': "New passwords do not match."})
+        user = self.context['request'].user
+        if not user.check_password(data['current_password']):
+            raise serializers.ValidationError({'current_password': "Current password is incorrect."})
+        if data['current_password'] == data['new_password']:
+            raise serializers.ValidationError({'new_password': "New password must differ from current password."})
+        return data
+
+    def save(self, **kwargs):
+        user = self.context['request'].user
+        user.set_password(self.validated_data['new_password'])
+        user.save()
+        return user
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
     student = CustomUserSerializer(read_only=True)
@@ -75,6 +106,11 @@ class QueueBookingSerializer(serializers.ModelSerializer):
 
 class ClassScheduleSerializer(serializers.ModelSerializer):
     faculty_details = CustomUserSerializer(source='faculty', read_only=True)
+    pending_reschedule = serializers.SerializerMethodField()
+
+    def get_pending_reschedule(self, obj):
+        return obj.reschedules.filter(status='pending').exists()
+
     class Meta:
         model = ClassSchedule
         fields = '__all__'
@@ -89,10 +125,12 @@ class RescheduleRequestSerializer(serializers.ModelSerializer):
 
 class LostFoundItemSerializer(serializers.ModelSerializer):
     user = CustomUserSerializer(read_only=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = LostFoundItem
         fields = '__all__'
-        read_only_fields = ('id', 'user', 'matched_with', 'created_at')
+        read_only_fields = ('id', 'user', 'status', 'matched_with', 'created_at')
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -113,3 +151,67 @@ class StudentMarkSerializer(serializers.ModelSerializer):
         model = StudentMark
         fields = '__all__'
         read_only_fields = ('id', 'created_at')
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CustomUser
+        fields = (
+            'id', 'username', 'email', 'password',
+            'first_name', 'last_name', 'full_name',
+            'role', 'roll_number', 'department', 'phone', 'section',
+            'avatar', 'bio', 'date_of_birth', 'address',
+            'is_active', 'is_staff', 'is_superuser',
+            'date_joined', 'last_login', 'updated_at',
+        )
+        read_only_fields = ('id', 'is_staff', 'is_superuser', 'date_joined', 'last_login', 'updated_at', 'full_name')
+
+    def get_full_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
+
+    def validate_password(self, value):
+        if value:
+            validate_password(value)
+        return value
+
+    def validate(self, data):
+        if self.instance is None and not data.get('password'):
+            raise serializers.ValidationError({'password': 'Password is required when creating a user.'})
+        return data
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        user = CustomUser(**validated_data)
+        if password:
+            user.set_password(password)
+        if user.role == 'admin':
+            user.is_staff = True
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        role_changed = 'role' in validated_data and validated_data['role'] != instance.role
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        if role_changed:
+            instance.is_staff = (instance.role == 'admin')
+        instance.save()
+        return instance
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source='actor.username', read_only=True, default=None)
+    target_username = serializers.CharField(source='target_user.username', read_only=True, default=None)
+    action_display = serializers.CharField(source='get_action_display', read_only=True)
+
+    class Meta:
+        model = AuditLog
+        fields = ('id', 'actor', 'actor_username', 'target_user', 'target_username',
+                  'action', 'action_display', 'details', 'ip_address', 'created_at')
+        read_only_fields = fields

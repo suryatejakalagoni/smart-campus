@@ -1,296 +1,559 @@
-import React, { useState, useEffect } from 'react';
-import api from '../../utils/api';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { MdAdd, MdSearch, MdLocationOn, MdEvent, MdCategory, MdCheckCircle, MdImage } from 'react-icons/md';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Search, MapPin, Calendar, Tag, Plus, X, CheckCircle,
+  Laptop, FileText, Key, BookOpen, Watch, Package, Image,
+} from 'lucide-react';
+import { useLostFound } from '../../hooks/useLostFound';
+
+// ── Category Icons Map ────────────────────────────
+const CATEGORY_ICONS = {
+  electronics: Laptop, documents: FileText, clothing: Package,
+  accessories: Watch, books: BookOpen, other: Package,
+};
+
+const CATEGORIES = [
+  { value: 'electronics', label: 'Electronics', icon: Laptop },
+  { value: 'documents',   label: 'Documents',   icon: FileText },
+  { value: 'clothing',    label: 'Clothing',     icon: Package },
+  { value: 'accessories', label: 'Accessories',  icon: Watch },
+  { value: 'books',       label: 'Books',        icon: BookOpen },
+  { value: 'other',       label: 'Other',        icon: Key },
+];
+
+// ── Item Card ─────────────────────────────────────
+const ItemCard = ({ item, onClick }) => {
+  const CatIcon = CATEGORY_ICONS[item.category] || Package;
+  const isMatched = item.status === 'matched';
+  const isResolved = item.status === 'resolved';
+  const borderColor = isResolved
+    ? 'rgba(16,185,129,0.4)'
+    : isMatched
+      ? 'rgba(16,185,129,0.3)'
+      : 'var(--border-subtle)';
+
+  return (
+    <motion.div
+      onClick={onClick}
+      whileHover={{ y: -4, boxShadow: (isMatched || isResolved) ? '0 18px 40px rgba(16,185,129,0.15)' : '0 18px 40px rgba(0,0,0,0.2)' }}
+      style={{
+        background: 'var(--bg-secondary)',
+        border: `1px solid ${borderColor}`,
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden', cursor: 'pointer', position: 'relative',
+        transition: 'all 0.25s',
+        opacity: isResolved ? 0.85 : 1,
+      }}
+    >
+      {/* Image placeholder / matched overlay */}
+      <div style={{ height: 140, background: 'var(--bg-tertiary)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {item.image ? (
+          <img src={item.image} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <CatIcon size={40} style={{ opacity: 0.15 }} />
+        )}
+        {isResolved && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(16,185,129,0.25)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              background: 'rgba(16,185,129,0.95)', color: 'white',
+              padding: '6px 14px', borderRadius: 99,
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+              display: 'flex', alignItems: 'center', gap: 6,
+              backdropFilter: 'blur(10px)',
+            }}>
+              <CheckCircle size={13} /> RESOLVED
+            </div>
+          </div>
+        )}
+        {!isResolved && isMatched && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(16,185,129,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              background: 'rgba(16,185,129,0.9)', color: 'white',
+              padding: '6px 14px', borderRadius: 99,
+              fontSize: 11, fontWeight: 800, letterSpacing: '0.06em',
+              display: 'flex', alignItems: 'center', gap: 6,
+              backdropFilter: 'blur(10px)',
+            }}>
+              <CheckCircle size={13} /> MATCHED
+            </div>
+          </div>
+        )}
+        {/* Category badge */}
+        <div style={{
+          position: 'absolute', top: 10, left: 10,
+          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(10px)',
+          padding: '4px 10px', borderRadius: 99,
+          fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+          color: item.item_type === 'lost' ? '#f59e0b' : '#10b981',
+          border: `1px solid ${item.item_type === 'lost' ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`,
+        }}>
+          {item.item_type}
+        </div>
+      </div>
+
+      <div style={{ padding: '14px 16px' }}>
+        <h3 style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 700, fontSize: 14, marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item.title}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <MapPin size={11} /> {item.location_found_or_lost}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Calendar size={11} /> {item.date_lost_or_found}
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
 
 const LostFoundPage = () => {
-  const [items, setItems] = useState([]);
-  const [activeTab, setActiveTab] = useState('lost');
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const [activeTab, setActiveTab]     = useState('lost');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [search, setSearch]           = useState('');
+  const [category, setCategory]       = useState('');
+  const [showModal, setShowModal]     = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
-  const [formData, setFormData] = useState({
-    item_type: 'lost',
-    title: '',
-    description: '',
-    category: 'electronics',
-    location_found_or_lost: '',
-    date_lost_or_found: new Date().toISOString().split('T')[0],
-    image: null
+  const [submitting, setSubmitting]   = useState(false);
+  const [resolving, setResolving]     = useState(false);
+  const [formData, setFormData]       = useState({
+    item_type: 'lost', title: '', description: '',
+    category: 'electronics', location_found_or_lost: '',
+    date_lost_or_found: new Date().toISOString().split('T')[0], image: null,
   });
 
-  const fetchItems = async () => {
-    try {
-      const params = new URLSearchParams({
-        type: activeTab,
-        status: 'open'
-      });
-      if (category) params.append('category', category);
-      if (search) params.append('search', search);
+  const { items, reportItem, resolveItem } = useLostFound({
+    type: activeTab,
+    category,
+    search,
+    status: statusFilter !== 'all' ? statusFilter : undefined,
+  });
 
-      const res = await api.get(`lost-found/?${params.toString()}`);
-      setItems(res.data);
-    } catch (err) {
-      toast.error('Failed to fetch items');
-    }
-  };
-
-  useEffect(() => {
-    fetchItems();
-  }, [activeTab, category, search]);
+  const matchedItems = items.filter(i => i.status === 'matched');
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
-      const data = new FormData();
-      Object.keys(formData).forEach(key => {
-        if (formData[key]) data.append(key, formData[key]);
-      });
-
-      await api.post('lost-found/', data, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
-      toast.success('Reported successfully! Checking for matches...');
+      await reportItem(formData);
+      toast.success('Item reported successfully. We\'ll notify you if a match is found.');
       setShowModal(false);
-      fetchItems();
+      setFormData({
+        item_type: 'lost', title: '', description: '',
+        category: 'electronics', location_found_or_lost: '',
+        date_lost_or_found: new Date().toISOString().split('T')[0], image: null,
+      });
     } catch (err) {
-      toast.error('Failed to report item');
-    }
+      toast.error(err.response?.data?.detail || 'Failed to report item. Please try again.');
+      console.error(err.response?.data);
+    } finally { setSubmitting(false); }
   };
 
-  const handleClaim = async (id) => {
+  const handleResolve = async (id) => {
+    setResolving(true);
     try {
-      await api.patch(`lost-found/${id}/claim/`);
-      toast.success('Item marked as claimed');
+      await resolveItem(id);
+      toast.success('Item marked as resolved');
       setSelectedItem(null);
-      fetchItems();
     } catch (err) {
-      toast.error('Failed to claim item');
+      toast.error(err.response?.data?.detail || 'Failed to resolve item');
+    } finally {
+      setResolving(false);
     }
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <h1 className="text-3xl font-bold">Lost & Found</h1>
-          <p className="text-slate-400">Help the campus community recover missing belongings</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+            <Search size={13} style={{ color: 'var(--text-tertiary)' }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Modules</span>
+          </div>
+          <h1 style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 800, fontSize: 26 }}>Lost & Found</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 4 }}>Help the campus community recover missing belongings</p>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2 px-6 py-3">
-          <MdAdd size={24} /> Report Item
-        </button>
+        <motion.button
+          onClick={() => setShowModal(true)}
+          className="oc-btn oc-btn-primary"
+          whileTap={{ scale: 0.97 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <Plus size={16} /> Report Item
+        </motion.button>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Sidebar Filters */}
-        <div className="w-full lg:w-64 space-y-6">
-          <div className="card p-4 space-y-4">
-             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Search</label>
-              <div className="relative">
-                <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text" 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm" 
-                  placeholder="Key words..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            </div>
-            
+      {/* Match Alert Banner */}
+      <AnimatePresence>
+        {matchedItems.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            style={{
+              background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)',
+              borderLeft: '4px solid #10b981', borderRadius: 'var(--radius-lg)',
+              padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 14,
+            }}
+          >
+            <CheckCircle size={20} style={{ color: '#10b981', flexShrink: 0 }} />
             <div>
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Category</label>
-              <select 
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">All Categories</option>
-                <option value="electronics">Electronics</option>
-                <option value="documents">Documents</option>
-                <option value="clothing">Clothing</option>
-                <option value="accessories">Accessories</option>
-                <option value="books">Books</option>
-                <option value="other">Other</option>
-              </select>
+              <p style={{ fontWeight: 700, fontSize: 14, color: '#10b981' }}>Match Found!</p>
+              <p style={{ fontSize: 13, color: 'rgba(16,185,129,0.8)' }}>
+                {matchedItems.length} item{matchedItems.length > 1 ? 's have' : ' has'} been matched. Click on matched items to view details and contact the reporter.
+              </p>
             </div>
-          </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Search + Category Filters */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ position: 'relative', flex: '1', minWidth: 200 }}>
+          <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+          <input
+            type="text" placeholder="Search items..." value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="oc-input" style={{ paddingLeft: 36 }}
+          />
         </div>
-
-        {/* Main Content */}
-        <div className="flex-1 space-y-6">
-          <div className="flex bg-slate-800 p-1 rounded-xl w-fit">
-            <button 
-              onClick={() => setActiveTab('lost')}
-              className={`px-8 py-2 rounded-lg font-bold transition ${activeTab === 'lost' ? 'bg-teal-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              Lost Items
-            </button>
-            <button 
-              onClick={() => setActiveTab('found')}
-              className={`px-8 py-2 rounded-lg font-bold transition ${activeTab === 'found' ? 'bg-teal-500 text-white' : 'text-slate-400 hover:text-slate-200'}`}
-            >
-              Found Items
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {items.map(item => (
-              <div 
-                key={item.id} 
-                onClick={() => setSelectedItem(item)}
-                className="card group cursor-pointer hover:border-teal-500/50 transition-all overflow-hidden"
+        {/* Category chips */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setCategory('')}
+            style={{
+              padding: '7px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              border: '1px solid', transition: 'all 0.2s',
+              borderColor: !category ? 'var(--accent-primary)' : 'var(--border-subtle)',
+              background: !category ? 'var(--accent-primary-glow)' : 'transparent',
+              color: !category ? 'var(--accent-primary)' : 'var(--text-secondary)',
+            }}
+          >All</button>
+          {CATEGORIES.map(cat => {
+            const CatIcon = cat.icon;
+            return (
+              <button
+                key={cat.value}
+                onClick={() => setCategory(cat.value === category ? '' : cat.value)}
+                style={{
+                  padding: '7px 14px', borderRadius: 99, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid', transition: 'all 0.2s',
+                  borderColor: category === cat.value ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                  background: category === cat.value ? 'var(--accent-primary-glow)' : 'transparent',
+                  color: category === cat.value ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
               >
-                <div className="h-48 bg-slate-900 relative">
-                  {item.image ? (
-                    <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-700">
-                      <MdImage size={48} />
-                      <p className="text-[10px] font-bold uppercase mt-2">No Image Provided</p>
-                    </div>
-                  )}
-                  <div className="absolute top-4 left-4">
-                    <span className="bg-slate-900/80 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-teal-400 uppercase tracking-widest border border-slate-700">
-                      {item.category}
-                    </span>
-                  </div>
-                </div>
-                <div className="p-5">
-                  <h3 className="font-bold text-lg mb-3 truncate group-hover:text-teal-400 transition-colors uppercase italic tracking-tight">{item.title}</h3>
-                  <div className="space-y-2 text-xs text-slate-400">
-                    <p className="flex items-center gap-2"><MdLocationOn className="text-teal-500" /> {item.location_found_or_lost}</p>
-                    <p className="flex items-center gap-2"><MdEvent className="text-teal-500" /> {item.date_lost_or_found}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {items.length === 0 && (
-              <div className="col-span-full py-20 text-center card bg-transparent border-dashed border-2 border-slate-700">
-                <p className="text-slate-500 italic">No {activeTab} items reported matching your filters.</p>
-              </div>
-            )}
-          </div>
+                <CatIcon size={11} /> {cat.label}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* Lost / Found Toggle + Status Filter */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: 4, borderRadius: 'var(--radius-lg)', width: 'fit-content', border: '1px solid var(--border-subtle)' }}>
+          {[
+            { key: 'lost', label: 'I Lost Something', color: '#f59e0b' },
+            { key: 'found', label: 'I Found Something', color: '#10b981' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '10px 22px', borderRadius: 'var(--radius-md)',
+                fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+                background: activeTab === tab.key ? tab.color : 'transparent',
+                color: activeTab === tab.key ? 'white' : 'var(--text-secondary)',
+                boxShadow: activeTab === tab.key ? `0 4px 14px ${tab.color}40` : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: 4, borderRadius: 'var(--radius-lg)', width: 'fit-content', border: '1px solid var(--border-subtle)' }}>
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'open', label: 'Open' },
+            { key: 'resolved', label: 'Resolved' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              style={{
+                padding: '10px 18px', borderRadius: 'var(--radius-md)',
+                fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+                background: statusFilter === tab.key ? 'var(--accent-primary)' : 'transparent',
+                color: statusFilter === tab.key ? 'white' : 'var(--text-secondary)',
+                boxShadow: statusFilter === tab.key ? '0 4px 14px rgba(99,102,241,0.35)' : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Items Grid */}
+      {items.length === 0 ? (
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '60px 20px', textAlign: 'center',
+          background: 'var(--bg-secondary)', border: '1px dashed var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+        }}>
+          <div style={{ width: 64, height: 64, borderRadius: 18, background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+            <Search size={28} style={{ color: 'var(--accent-primary)', opacity: 0.7 }} />
+          </div>
+          <p style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 700, fontSize: 16, marginBottom: 6 }}>No {activeTab} items reported</p>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
+            {search || category ? 'Try adjusting your search or filters.' : `No ${activeTab} items matching your search.`}
+          </p>
+        </div>
+      ) : (
+        <motion.div
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        >
+          {items.map((item, i) => (
+            <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+              <ItemCard item={item} onClick={() => setSelectedItem(item)} />
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
 
       {/* Detail Modal */}
-      {selectedItem && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in zoom-in-95">
-            <div className="flex flex-col md:flex-row h-full">
-              <div className="w-full md:w-1/2 h-64 md:h-auto bg-slate-900">
-                {selectedItem.image ? (
-                  <img src={selectedItem.image} alt={selectedItem.title} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-slate-700"><MdImage size={80} /></div>
+      <AnimatePresence>
+        {selectedItem && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setSelectedItem(null)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 200 }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-secondary)', border: '1px solid var(--border-hover)',
+                borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 640,
+                overflow: 'hidden', boxShadow: 'var(--shadow-xl)',
+              }}
+            >
+              <div style={{ height: 200, background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                {selectedItem.image
+                  ? <img src={selectedItem.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : <Package size={60} style={{ opacity: 0.1 }} />}
+                <button onClick={() => setSelectedItem(null)} style={{ position: 'absolute', top: 14, right: 14, width: 34, height: 34, borderRadius: '50%', background: 'rgba(0,0,0,0.5)', border: 'none', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={16} />
+                </button>
+                <div style={{ position: 'absolute', top: 14, left: 14 }}>
+                  <span style={{
+                    background: selectedItem.item_type === 'lost' ? 'rgba(245,158,11,0.8)' : 'rgba(16,185,129,0.8)',
+                    color: 'white', padding: '4px 12px', borderRadius: 99,
+                    fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em',
+                    backdropFilter: 'blur(10px)',
+                  }}>
+                    {selectedItem.item_type}
+                  </span>
+                </div>
+              </div>
+              <div style={{ padding: 28 }}>
+                <h2 style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 800, fontSize: 20, marginBottom: 6 }}>{selectedItem.title}</h2>
+                <div style={{ display: 'flex', gap: 16, marginBottom: 18, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <MapPin size={12} /> {selectedItem.location_found_or_lost}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Calendar size={12} /> {selectedItem.date_lost_or_found}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Tag size={12} /> {selectedItem.category}
+                  </span>
+                </div>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, marginBottom: 24 }}>
+                  {selectedItem.description}
+                </p>
+                {selectedItem.status === 'matched' && (
+                  <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 13, color: '#10b981', fontWeight: 600 }}>
+                    This item has been matched! Contact the reporter to arrange collection.
+                  </div>
                 )}
-              </div>
-              <div className="flex-1 p-8 flex flex-col">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <span className="bg-teal-500/10 text-teal-400 border border-teal-500/20 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
-                      {selectedItem.category}
-                    </span>
-                    <h2 className="text-2xl font-black text-white mt-4 uppercase italic leading-none">{selectedItem.title}</h2>
+                {selectedItem.status === 'resolved' && (
+                  <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, padding: '12px 16px', marginBottom: 20, fontSize: 13, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckCircle size={16} />
+                    This item has been resolved{selectedItem.resolved_at ? ` on ${new Date(selectedItem.resolved_at).toLocaleDateString()}` : ''}.
                   </div>
-                  <button onClick={() => setSelectedItem(null)} className="text-slate-500 hover:text-white transition"><MdSearch size={24} className="rotate-45" /></button>
-                </div>
-
-                <div className="space-y-4 mb-8">
-                  <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Location Details</p>
-                    <p className="text-sm">{selectedItem.location_found_or_lost}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Description</p>
-                    <p className="text-sm text-slate-300 leading-relaxed">{selectedItem.description}</p>
-                  </div>
-                </div>
-
-                <div className="mt-auto pt-6 border-t border-slate-700 flex gap-4">
-                  <button 
-                    onClick={() => handleClaim(selectedItem.id)}
-                    className="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2"
-                  >
-                    <MdCheckCircle size={20} /> Mark as Resolved
+                )}
+                <div style={{ display: 'flex', gap: 12 }}>
+                  {selectedItem.status !== 'resolved' ? (
+                    <motion.button
+                      onClick={() => handleResolve(selectedItem.id)}
+                      disabled={resolving}
+                      whileTap={{ scale: 0.97 }}
+                      style={{
+                        flex: 1, padding: '12px 20px', borderRadius: 'var(--radius-md)',
+                        background: 'var(--gradient-hero)', color: 'white',
+                        border: 'none', fontSize: 14, fontWeight: 700, cursor: resolving ? 'wait' : 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        opacity: resolving ? 0.7 : 1,
+                      }}
+                    >
+                      <CheckCircle size={16} /> {resolving ? 'Resolving...' : 'Mark as Resolved'}
+                    </motion.button>
+                  ) : (
+                    <div style={{
+                      flex: 1, padding: '12px 20px', borderRadius: 'var(--radius-md)',
+                      background: 'rgba(16,185,129,0.15)', color: '#10b981',
+                      border: '1px solid rgba(16,185,129,0.3)', fontSize: 14, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    }}>
+                      <CheckCircle size={16} /> Resolved
+                    </div>
+                  )}
+                  <button onClick={() => setSelectedItem(null)} className="oc-btn oc-btn-secondary">
+                    Close
                   </button>
-                  <button onClick={() => setSelectedItem(null)} className="flex-1 bg-slate-700 hover:bg-slate-600 font-bold py-3 rounded-xl">Close</button>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Report Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-[100]">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-xl p-8 shadow-2xl">
-            <h2 className="text-2xl font-bold mb-6 italic">Report an Item</h2>
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div className="flex bg-slate-900 p-1 rounded-lg">
-                <button 
-                  type="button"
-                  onClick={() => setFormData({...formData, item_type: 'lost'})}
-                  className={`flex-1 py-2 rounded-md font-bold text-sm ${formData.item_type === 'lost' ? 'bg-red-500 text-white' : 'text-slate-500'}`}
-                >
-                  LOST
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setFormData({...formData, item_type: 'found'})}
-                  className={`flex-1 py-2 rounded-md font-bold text-sm ${formData.item_type === 'found' ? 'bg-green-500 text-white' : 'text-slate-500'}`}
-                >
-                  FOUND
-                </button>
+      <AnimatePresence>
+        {showModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={() => setShowModal(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 200 }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-secondary)', border: '1px solid var(--border-hover)',
+                borderRadius: 'var(--radius-xl)', width: '100%', maxWidth: 560,
+                padding: 32, boxShadow: 'var(--shadow-xl)', maxHeight: '90vh', overflowY: 'auto',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                <h2 style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 800, fontSize: 20 }}>Report an Item</h2>
+                <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}><X size={18} /></button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Item Title</label>
-                  <input required maxLength="200" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" placeholder="e.g., Blue Samsung earbuds" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+              <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* Lost / Found Segmented Control */}
+                <div style={{ display: 'flex', background: 'var(--bg-tertiary)', padding: 4, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                  {[
+                    { key: 'lost', label: 'I Lost Something', color: '#f59e0b' },
+                    { key: 'found', label: 'I Found Something', color: '#10b981' },
+                  ].map(tab => (
+                    <button key={tab.key} type="button" onClick={() => setFormData({ ...formData, item_type: tab.key })}
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+                        background: formData.item_type === tab.key ? tab.color : 'transparent',
+                        color: formData.item_type === tab.key ? 'white' : 'var(--text-secondary)',
+                      }}
+                    >{tab.label}</button>
+                  ))}
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Category</label>
-                  <select className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})}>
-                    <option value="electronics">Electronics</option>
-                    <option value="documents">Documents</option>
-                    <option value="clothing">Clothing</option>
-                    <option value="accessories">Accessories</option>
-                    <option value="books">Books</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Date</label>
-                  <input type="date" required className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.date_lost_or_found} onChange={(e) => setFormData({...formData, date_lost_or_found: e.target.value})} />
-                </div>
-                <div className="col-span-2">
-                   <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Location</label>
-                   <input required className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" placeholder="Where was it lost/found?" value={formData.location_found_or_lost} onChange={(e) => setFormData({...formData, location_found_or_lost: e.target.value})} />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Description</label>
-                  <textarea required rows="3" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" placeholder="Provide extra details (color, serial #, contents...)" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
-                </div>
-                <div className="col-span-2">
-                  <label className="text-xs font-bold text-slate-500 uppercase tracking-widest block mb-2">Add Photo (Optional)</label>
-                  <input type="file" accept="image/*" className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-teal-500/10 file:text-teal-400 hover:file:bg-teal-500/20" onChange={(e) => setFormData({...formData, image: e.target.files[0]})} />
-                </div>
-              </div>
 
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-slate-700 py-3 rounded-xl font-bold">Cancel</button>
-                <button type="submit" className="flex-1 bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl font-bold transition">Submit Report</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Item Title *</label>
+                  <input required maxLength={200} className="oc-input" placeholder="e.g., Black HP laptop bag" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
+                </div>
+
+                {/* Category Icon Grid */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 10 }}>Category *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                    {CATEGORIES.map(cat => {
+                      const CatIcon = cat.icon;
+                      const isSelected = formData.category === cat.value;
+                      return (
+                        <button key={cat.value} type="button" onClick={() => setFormData({ ...formData, category: cat.value })}
+                          style={{
+                            padding: '10px 8px', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                            border: `1.5px solid ${isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                            background: isSelected ? 'var(--accent-primary-glow)' : 'transparent',
+                            color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, transition: 'all 0.2s',
+                          }}
+                        >
+                          <CatIcon size={18} />
+                          <span style={{ fontSize: 11, fontWeight: 600 }}>{cat.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Location *</label>
+                    <input required className="oc-input" placeholder="Where was it lost/found?" value={formData.location_found_or_lost} onChange={e => setFormData({ ...formData, location_found_or_lost: e.target.value })} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Date *</label>
+                    <input type="date" required className="oc-input" value={formData.date_lost_or_found} onChange={e => setFormData({ ...formData, date_lost_or_found: e.target.value })} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Description *</label>
+                  <textarea required rows={3} className="oc-input" placeholder="Provide extra details (color, size, contents...)" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} style={{ resize: 'none' }} />
+                </div>
+
+                {/* Drag-drop image upload */}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Add Photo (Optional)</label>
+                  <label htmlFor="lf-image-upload" style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    padding: '24px', border: '2px dashed var(--border-subtle)', borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer', transition: 'all 0.2s', gap: 8,
+                  }}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFormData({ ...formData, image: f }); }}
+                  >
+                    <Image size={24} style={{ opacity: 0.4 }} />
+                    <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                      {formData.image ? formData.image.name : 'Drop image here or click to browse'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', opacity: 0.6 }}>Helps with faster matching</span>
+                  </label>
+                  <input id="lf-image-upload" type="file" accept="image/*" style={{ display: 'none' }} onChange={e => setFormData({ ...formData, image: e.target.files[0] })} />
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, paddingTop: 4 }}>
+                  <button type="button" onClick={() => setShowModal(false)} className="oc-btn oc-btn-secondary" style={{ flex: 1 }}>Cancel</button>
+                  <motion.button type="submit" disabled={submitting} whileTap={{ scale: 0.97 }} className="oc-btn oc-btn-primary" style={{ flex: 1 }}>
+                    {submitting ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                        Submitting...
+                      </span>
+                    ) : 'Submit Report'}
+                  </motion.button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

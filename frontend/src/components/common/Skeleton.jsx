@@ -1,7 +1,7 @@
 import React from 'react';
 
 export const SkeletonLine = ({ className = "h-4 w-full" }) => (
-  <div className={`bg-slate-800 animate-pulse rounded ${className}`} />
+  <div className={`bg-slate-700/50 animate-pulse rounded ${className}`} />
 );
 
 export const SkeletonCard = () => (

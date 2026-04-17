@@ -34,8 +34,18 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateUser = (partial) => {
+    setUser(prev => (prev ? { ...prev, ...partial } : partial));
+  };
+
+  const refreshUser = async () => {
+    const res = await api.get('auth/profile/');
+    setUser(res.data);
+    return res.data;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

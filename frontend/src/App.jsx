@@ -1,4 +1,4 @@
-import React from 'react';
+// React import not needed with the new JSX transform (React 17+)
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Toaster } from 'react-hot-toast';
@@ -14,23 +14,14 @@ import TimetableView from './pages/Schedule/TimetableView';
 import AdminSchedule from './pages/Schedule/AdminSchedule';
 import FacultyReschedule from './pages/Schedule/FacultyReschedule';
 import LostFoundPage from './pages/LostFound/LostFoundPage';
+import ProfilePage from './pages/Profile/ProfilePage';
+import UserManagementPage from './pages/Users/UserManagementPage';
 import StudentDashboard from './pages/Dashboards/StudentDashboard';
 import AdminDashboard from './pages/Dashboards/AdminDashboard';
+import FacultyDashboard from './pages/Dashboards/FacultyDashboard';
 import FacultyAttendance from './pages/Attendance/FacultyAttendance';
+import AcademicCalendar from './pages/AcademicCalendar';
 import NotFound from './pages/NotFound';
-
-const DashboardPlaceholder = ({ title }) => (
-  <div style={{
-    background: 'var(--bg-secondary)',
-    border: '1px solid var(--border-subtle)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '60px 40px', textAlign: 'center',
-    boxShadow: 'var(--shadow-md)',
-  }}>
-    <h1 style={{ fontFamily: '"Plus Jakarta Sans"', fontWeight: 800, fontSize: 28, marginBottom: 12 }}>{title}</h1>
-    <p style={{ color: 'var(--text-secondary)', fontSize: 15 }}>This module is coming soon.</p>
-  </div>
-);
 
 function App() {
   return (
@@ -64,9 +55,10 @@ function App() {
             <Route element={<MainLayout />}>
               {/* Common / Redirect Home */}
               <Route path="/" element={<StudentDashboard />} />
-              <Route path="/profile" element={<DashboardPlaceholder title="My Profile" />} />
+              <Route path="/profile" element={<ProfilePage />} />
               <Route path="/lost-found" element={<LostFoundPage />} />
               <Route path="/schedule" element={<TimetableView />} />
+              <Route path="/academic-calendar" element={<AcademicCalendar />} />
 
               {/* Student Role */}
               <Route element={<ProtectedRoute allowedRoles={['student']} />}>
@@ -77,7 +69,7 @@ function App() {
 
               {/* Faculty Role */}
               <Route element={<ProtectedRoute allowedRoles={['faculty']} />}>
-                <Route path="/faculty/dashboard" element={<TimetableView />} />
+                <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
                 <Route path="/faculty/reschedule" element={<FacultyReschedule />} />
                 <Route path="/faculty/attendance" element={<FacultyAttendance />} />
               </Route>
@@ -88,7 +80,7 @@ function App() {
                 <Route path="/admin/leaves" element={<AdminLeaves />} />
                 <Route path="/admin/queue" element={<AdminQueue />} />
                 <Route path="/admin/schedule" element={<AdminSchedule />} />
-                <Route path="/users" element={<DashboardPlaceholder title="User Management" />} />
+                <Route path="/users" element={<UserManagementPage />} />
               </Route>
             </Route>
           </Route>

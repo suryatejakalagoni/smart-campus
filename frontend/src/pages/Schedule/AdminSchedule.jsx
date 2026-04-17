@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import api from '../../utils/api';
 import toast from 'react-hot-toast';
-import { MdAdd, MdError, MdCheck, MdClose, MdEventNote, MdHistory } from 'react-icons/md';
+import { MdAdd, MdCheck, MdClose, MdEventNote, MdHistory, MdDeleteOutline } from 'react-icons/md';
+import { useTimetable } from '../../hooks/useTimetable';
 
 const AdminSchedule = () => {
   const [activeTab, setActiveTab] = useState('manage');
   const [facultyList, setFacultyList] = useState([]);
-  const [schedules, setSchedules] = useState([]);
   const [requests, setRequests] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -20,36 +20,44 @@ const AdminSchedule = () => {
     semester: 1,
   });
 
-  const fetchData = async () => {
+  const { schedules, fetchSchedules, addSchedule, deleteSchedule } = useTimetable({ role: 'admin' });
+
+  const fetchSideData = async () => {
     try {
-      const [facRes, schRes, reqRes] = await Promise.all([
-        api.get('auth/profile/'), // Using this to get role but I actually need a users list
-        api.get('schedule/'),
+      const [facRes, reqRes] = await Promise.all([
+        api.get('users/?role=faculty'),
         api.get('reschedule/')
       ]);
-      // Note: Backend needs a users list endpoint for this to be perfect. 
-      // I'll assume a dummy list or that I'll add a generic one.
-      setSchedules(schRes.data);
+      setFacultyList(facRes.data);
       setRequests(reqRes.data);
-    } catch (err) {
+    } catch {
       toast.error('Failed to fetch data');
     }
   };
 
   useEffect(() => {
-    fetchData();
+    fetchSideData();
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.post('schedule/', formData);
+      await addSchedule(formData);
       toast.success('Class scheduled successfully!');
       setShowModal(false);
-      fetchData();
     } catch (err) {
-      const errorMsg = err.response?.data?.[0] || 'Conflict detected or invalid data';
+      const errorMsg = err.response?.data?.conflict || err.response?.data?.[0] || 'Conflict detected or invalid data';
       toast.error(errorMsg);
+    }
+  };
+
+  const handleDelete = async (id, subject) => {
+    if (!window.confirm(`PERMANENTLY remove "${subject}" from the schedule? This action cannot be undone.`)) return;
+    try {
+      await deleteSchedule(id);
+      toast.success('Class removed from schedule');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to remove class');
     }
   };
 
@@ -57,7 +65,8 @@ const AdminSchedule = () => {
     try {
       await api.patch(`reschedule/${id}/review/`, { status });
       toast.success(`Request ${status}`);
-      fetchData();
+      fetchSchedules(); // refresh timetable after approval changes slots
+      fetchSideData();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Review failed');
     }
@@ -122,7 +131,12 @@ const AdminSchedule = () => {
                   <td className="px-6 py-4">Room {s.room}</td>
                   <td className="px-6 py-4 capitalize">{s.day_of_week}, {s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}</td>
                   <td className="px-6 py-4">
-                    <button className="text-red-400 hover:text-red-300 font-bold" onClick={() => toast.error('Soft delete implementation pending')}>Delete</button>
+                    <button
+                      className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1"
+                      onClick={() => handleDelete(s.id, s.subject)}
+                    >
+                      <MdDeleteOutline size={16} /> Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -186,8 +200,11 @@ const AdminSchedule = () => {
                 <input required className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.subject} onChange={(e) => setFormData({...formData, subject: e.target.value})} />
               </div>
               <div>
-                <label className="text-sm font-medium text-slate-300 block mb-2">Faculty ID</label>
-                <input required type="number" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.faculty} onChange={(e) => setFormData({...formData, faculty: e.target.value})} placeholder="User ID" />
+                <label className="text-sm font-medium text-slate-300 block mb-2">Faculty</label>
+                <select required className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.faculty} onChange={(e) => setFormData({...formData, faculty: e.target.value})}>
+                  <option value="">Select Faculty</option>
+                  {facultyList.map(f => <option key={f.id} value={f.id}>{f.username} — {f.department}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-300 block mb-2">Room Number</label>
@@ -202,6 +219,12 @@ const AdminSchedule = () => {
               <div>
                  <label className="text-sm font-medium text-slate-300 block mb-2">Section</label>
                  <input className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.section} onChange={(e) => setFormData({...formData, section: e.target.value})} />
+              </div>
+              <div>
+                 <label className="text-sm font-medium text-slate-300 block mb-2">Semester</label>
+                 <select className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3" value={formData.semester} onChange={(e) => setFormData({...formData, semester: Number(e.target.value)})}>
+                   {[1,2,3,4,5,6,7,8].map(s => <option key={s} value={s}>Semester {s}</option>)}
+                 </select>
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-300 block mb-2">Start Time</label>

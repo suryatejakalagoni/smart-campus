@@ -11,7 +11,12 @@ class CustomUser(AbstractUser):
     roll_number = models.CharField(max_length=20, blank=True)
     department = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=15, blank=True)
-    section = models.CharField(max_length=10, blank=True) # Added for student filtering
+    section = models.CharField(max_length=10, blank=True)
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
+    bio = models.TextField(blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    address = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -109,6 +114,15 @@ class ClassSchedule(models.Model):
     section = models.CharField(max_length=10)
     semester = models.IntegerField()
     is_active = models.BooleanField(default=True)
+    
+    # Reschedule tracking
+    rescheduled_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='rescheduled_to')
+    reschedule_status = models.CharField(
+        max_length=20,
+        choices=[('none','None'),('pending','Pending'),('approved','Approved'),('rejected','Rejected')],
+        default='none'
+    )
+    reschedule_note = models.TextField(blank=True)
 
     def __str__(self):
         return f"{self.subject} - {self.section} ({self.day_of_week})"
@@ -121,7 +135,7 @@ class RescheduleRequest(models.Model):
     )
     original_schedule = models.ForeignKey(ClassSchedule, on_delete=models.CASCADE, related_name='reschedules')
     requested_by = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='reschedule_requests')
-    new_date = models.DateField()
+    new_day = models.CharField(max_length=10, choices=ClassSchedule.DAY_CHOICES)
     new_start_time = models.TimeField()
     new_end_time = models.TimeField()
     new_room = models.CharField(max_length=20)
@@ -146,6 +160,7 @@ class LostFoundItem(models.Model):
         ('open', 'Open'),
         ('matched', 'Matched'),
         ('claimed', 'Claimed'),
+        ('resolved', 'Resolved'),
         ('closed', 'Closed'),
     )
 
@@ -157,8 +172,10 @@ class LostFoundItem(models.Model):
     location_found_or_lost = models.CharField(max_length=200)
     date_lost_or_found = models.DateField()
     image = models.ImageField(upload_to='lost_found/', blank=True, null=True)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='open')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='open')
     matched_with = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='resolved_items')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -192,6 +209,33 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.date} ({self.status})"
+
+class AuditLog(models.Model):
+    ACTION_CHOICES = (
+        ('user_created', 'User Created'),
+        ('user_updated', 'User Updated'),
+        ('user_deleted', 'User Deleted'),
+        ('user_activated', 'User Activated'),
+        ('user_deactivated', 'User Deactivated'),
+        ('role_changed', 'Role Changed'),
+        ('password_reset', 'Password Reset'),
+        ('bulk_import', 'Bulk Import'),
+    )
+    actor = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, related_name='audit_actions')
+    target_user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_targets')
+    action = models.CharField(max_length=32, choices=ACTION_CHOICES)
+    details = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        actor = self.actor.username if self.actor else 'system'
+        target = self.target_user.username if self.target_user else '-'
+        return f"{actor} {self.action} {target}"
+
 
 class StudentMark(models.Model):
     EXAM_CHOICES = (
