@@ -25,7 +25,7 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: smartcampus-db
-          property: connectionString
+          property: externalConnectionString
       - key: CORS_ALLOWED_ORIGINS
         sync: false  # Set this to your Vercel URL after frontend deploy
       - key: CLOUDINARY_CLOUD_NAME
