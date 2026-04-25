@@ -38,8 +38,8 @@ const getCurrentTimeOffset = () => {
 
 const TimetableView = () => {
   const { user } = useAuth();
-  const [section, setSection]     = useState('A');
-  const [semester, setSemester]   = useState(5);
+  const [section, setSection]     = useState('CSE-A');
+  const [semester, setSemester]   = useState(4);
   const [viewMode, setViewMode]   = useState('grid');
   const [timeOffset, setTimeOffset] = useState(getCurrentTimeOffset());
 
@@ -126,14 +126,14 @@ const TimetableView = () => {
           {(user?.role === 'admin' || user?.role === 'student') && (
             <>
               <div style={{ display: 'flex', background: 'var(--bg-secondary)', padding: 4, borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-                {['A', 'B'].map(s => (
-                  <button key={s} onClick={() => setSection(s)} style={{
+                {[{ value: 'CSE-A', label: 'A' }, { value: 'CSE-B', label: 'B' }].map(s => (
+                  <button key={s.value} onClick={() => setSection(s.value)} style={{
                     padding: '7px 16px', borderRadius: 'var(--radius-md)',
                     fontSize: 12, fontWeight: 700, cursor: 'pointer', border: 'none', transition: 'all 0.2s',
-                    background: section === s ? 'var(--gradient-hero)' : 'transparent',
-                    color: section === s ? 'white' : 'var(--text-secondary)',
+                    background: section === s.value ? 'var(--gradient-hero)' : 'transparent',
+                    color: section === s.value ? 'white' : 'var(--text-secondary)',
                   }}>
-                    Section {s}
+                    Section {s.label}
                   </button>
                 ))}
               </div>
